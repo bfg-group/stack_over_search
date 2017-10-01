@@ -1,0 +1,10 @@
+aiohttp==2.2.5
+aiohttp-jinja2==0.14.0
+async-timeout==1.4.0
+configparser==3.5.0
+gevent==1.2.2
+greenlet==0.4.12
+multidict==3.2.0
+PyMySQL==0.7.11
+redis==2.10.6
+websocket-server==0.4

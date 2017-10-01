@@ -1,0 +1,114 @@
+import pymysql.cursors
+import logging
+from configparser import ConfigParser
+
+
+logging.basicConfig(filename='/var/log/StackMysql_error.log',
+                    format = '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+                    level = logging.ERROR)
+logger = logging.getLogger()
+
+config = ConfigParser()
+config.read('StackSettings.ini')
+
+
+class SQLRequest():
+    def __init__(self):
+        self.connection = pymysql.connect(host=config.get('mysql', 'ip'),
+                                          user=config.get('mysql', 'user'),
+                                          password=config.get('mysql', 'password'),
+                                          db=config.get('mysql', 'db'),
+                                          charset='utf8',
+                                          cursorclass=pymysql.cursors.DictCursor)
+
+    def get_req_list(self, **kwargs):
+        """ Метод для получения списка всех сделанных запросов """
+        try:
+            with self.connection.cursor() as self.cur:
+                select = """SELECT `request`, `reqtime` FROM requests"""
+                # Сортируем, если попросят
+                sort_or_not = kwargs.pop('sort', '')
+                if sort_or_not is True:
+                    select = select + """ ORDER BY `reqtime` DESC"""
+                self.cur.execute(select)
+                results = self.cur.fetchall()
+        except Exception as err:
+            logger.error(err)
+        finally:
+            self.cur.close()
+            return results
+
+    def get_last_req_activity(self, name):
+        """ Метод для получения времени последней активности
+            в unixtime по имени запроса """
+        try:
+            with self.connection.cursor() as self.cur:
+                self.cur.execute("""SELECT UNIX_TIMESTAMP(last_activity)
+                                    FROM requests_data
+                                    WHERE request = %s
+                                    ORDER BY `last_activity` DESC
+                                    LIMIT 1""", (name))
+                last_activity = self.cur.fetchone()
+        except Exception as err:
+            logger.error(err)
+        finally:
+            self.cur.close()
+            return last_activity
+
+    def record_intitle_to_mysql(self, intitle):
+        """ Метод для записи запроса в mysql """
+        try:
+            with self.connection.cursor() as self.cur:
+                self.cur.execute("""INSERT INTO requests (request, reqtime)
+                                    VALUES(%s, NOW())
+                                    ON DUPLICATE KEY UPDATE reqtime=NOW()""", (intitle))
+                self.connection.commit()
+        except Exception as err:
+            logger.error(err)
+        finally:
+            self.cur.close()
+
+    def record_response(self, intitle, response):
+        """ Метод для записи полученных от API значений в mysql """
+        for i in range(0, len(response) - 1):
+            try:
+                with self.connection.cursor() as self.cur:
+                        title = response[i]['title']
+                        author = response[i]['owner']['display_name']
+                        link = response[i]['link']
+                        creation_date = response[i]['creation_date']
+                        last_activity = response[i]['last_activity_date']
+
+                        self.cur.execute("""INSERT INTO `requests_data` (`request`, `title`, `author`, `link`, `create_date`, `last_activity`)
+                                            VALUES(%s, %s, %s, %s, FROM_UNIXTIME(%s), FROM_UNIXTIME(%s))
+                                            ON DUPLICATE KEY UPDATE last_activity=FROM_UNIXTIME(%s)""",
+                                            (intitle, title, author, link, creation_date, last_activity, last_activity))
+
+                        self.connection.commit()
+            except Exception as err:
+                logger.error(err)
+            finally:
+                self.cur.close()
+
+    def results_for_print(self, params_dict):
+        """ Метод забирает результаты для генерации
+            страницы с ответами на запрос из базы """
+
+        intitle = params_dict['intitle']
+        pagesize = params_dict['pagesize']
+        page = params_dict['page']
+
+        try:
+            with self.connection.cursor() as self.cur:
+                self.cur.execute("""SELECT CAST((@row_number:=@row_number + 1) AS SIGNED) AS num, title, author, link, create_date, last_activity
+                                    FROM requests_data, (SELECT @row_number:=%s) AS t
+                                    WHERE request = %s
+                                    ORDER BY last_activity DESC
+                                    LIMIT %s OFFSET %s""",
+                                    (int(pagesize)*(page - 1), intitle, int(pagesize), int(pagesize)*(page - 1)))
+                results = self.cur.fetchall()
+        except Exception as err:
+            logger.error(err)
+        finally:
+            self.cur.close()
+            return results
