@@ -1,25 +1,16 @@
-from .stack_mysql import SQLRequest, get_log_level
+from .stack_mysql import SQLRequest
 from .stack_oversearch import StackApiReq
+from .stack_logs import stack_logger
 from websocket_server import WebsocketServer
 import time
 import threading
-import logging
 from configparser import ConfigParser
 
 
 config = ConfigParser()
 config.read('/etc/stackoversearch/stack_settings.ini')
 
-logfile = config.get('logs', 'path')
-loglevel = config.get('logs', 'level').upper()
-
-
-level = get_log_level(loglevel)
-
-logging.basicConfig(filename=logfile+'/renewer.log',
-                    format='[%(asctime)s] - %(lineno)d - %(message)s',
-                    level=level)
-logger = logging.getLogger()
+logger = stack_logger()
 
 
 def web_socket_msg(server):

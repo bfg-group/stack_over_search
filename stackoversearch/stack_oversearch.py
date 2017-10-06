@@ -1,25 +1,17 @@
-from .stack_mysql import SQLRequest, get_log_level
+from .stack_mysql import SQLRequest
+from .stack_logs import stack_logger
 from aiohttp import web
 import aiohttp_jinja2
 import jinja2
 import redis
 import requests
-import logging
 from configparser import ConfigParser
+
 
 config = ConfigParser()
 config.read('/etc/stackoversearch/stack_settings.ini')
 
-logfile = config.get('logs', 'path')
-loglevel = config.get('logs', 'level').upper()
-
-level = get_log_level(loglevel)
-
-logging.basicConfig(filename=logfile+'/stack_over_search.log',
-                    format='[%(asctime)s] - %(lineno)d - %(message)s',
-                    level=level)
-logger = logging.getLogger()
-
+logger = stack_logger()
 
 try:
     r = redis.StrictRedis(host=config.get('redis', 'ip'),

@@ -1,32 +1,12 @@
 import pymysql.cursors
-import logging
+from .stack_logs import stack_logger
 from configparser import ConfigParser
 
 
 config = ConfigParser()
 config.read('/etc/stackoversearch/stack_settings.ini')
 
-logfile = config.get('logs', 'path')
-loglevel = config.get('logs', 'level').upper()
-
-
-# Выставляем уровень для logger
-def get_log_level(loglevel):
-    level = logging.DEBUG if loglevel == "INFO" else None
-    level = logging.INFO if loglevel == "INFO" else None
-    level = logging.ERROR if loglevel == "ERROR" else None
-    level = logging.DISASTER if loglevel == "DISASTER" else None
-    if level is None:
-        level = logging.ERROR
-    return level
-
-
-level = get_log_level(loglevel)
-
-logging.basicConfig(filename=logfile+'/mysql_error.log',
-                    format='[%(asctime)s] - %(lineno)d - %(message)s',
-                    level=level)
-logger = logging.getLogger()
+logger = stack_logger()
 
 
 class SQLRequest():
