@@ -17,11 +17,11 @@ mysql-server >= 5.7.19-0ubuntu0.16.04.1
 * msg_appear_time = {время (сек): 15} 
 
 **[search_settings]**
-* cache_timeout = 60
+* cache_timeout = {время (сек): 60}
 
 **[redis]**
 * ip = {ip адрес: 127.0.0.1}
-* port = 6379
+* port = {порт: 6379}
 
 **[mysql]**
 * ip = {ip адрес: 127.0.0.1}
