@@ -1,34 +1,40 @@
-from StackMysql import SQLRequest
-from StackOversearch import StackApiReq
+from .stack_mysql import SQLRequest, get_log_level
+from .stack_oversearch import StackApiReq
 from websocket_server import WebsocketServer
 import time
 import threading
 import logging
 from configparser import ConfigParser
 
-logging.basicConfig(filename='/var/log/renewer.log',
-                    format = '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
-                    level = logging.DEBUG)
-logger = logging.getLogger()
 
 config = ConfigParser()
-config.read('StackSettings.ini')
+config.read('/etc/stackoversearch/stack_settings.ini')
 
-ws_port = config.getint('renewer_settings', 'ws_port')
-ws_ip = config.get('renewer_settings', 'ws_ip')
-server = WebsocketServer(ws_port, host=ws_ip)
+logfile = config.get('logs', 'path')
+loglevel = config.get('logs', 'level').upper()
 
 
-def web_socket_msg():
-    """ Запускаем сервер для WebSocket"""
-    global server
+level = get_log_level(loglevel)
+
+logging.basicConfig(filename=logfile+'/renewer.log',
+                    format='[%(asctime)s] - %(lineno)d - %(message)s',
+                    level=level)
+logger = logging.getLogger()
+
+
+def web_socket_msg(server):
+    """
+    Запускаем сервер для WebSocket
+    """
     server.run_forever()
 
 
 def send_msg():
-    """Проверяем, необходим ли апдейт по запросам.
-       Если необходим - делаем и шлем об этом сообщение
-       через WebSocket."""
+    """
+    Проверяем, необходим ли апдейт по запросам.
+    Если необходим - делаем и шлем об этом сообщение
+    через WebSocket
+    """
     global server
     MySQLReq = SQLRequest()
     while True:
@@ -58,7 +64,7 @@ def send_msg():
                     logger.error('Нет данных от API')
                     break
 
-                # Для всех строк полученных от апи сравниваем дату последней активности
+                # Cравниваем дату последней активности
                 # Если больше - апдейтим, меньше - заканчиваем цикл
                 for number in range(0, len(items) - 1):
                     if items[number]['last_activity_date'] > last_activity['UNIX_TIMESTAMP(last_activity)']:
@@ -76,14 +82,14 @@ def send_msg():
                 i += 1
                 logger.debug('NEXT_PAGE')
 
-        msg_title = '<p><b>Внимание, была обновлена информация по запросам: </b></p><p class="text-info">'
+        msg_title = '<p><b><Была обновлена информация по запросам: </b></p><p class="text-info">'
 
         # Считаем у кого сколько апдейтов накопилось
         logger.info(message)
         update_counter = 0
         for request in message:
             if message[request] > 0:
-                msg_title = msg_title + request + '(' + str(message[request]) + '), '
+                msg_title += '{}({}) '.format(request, message[request])
                 update_counter += 1
 
         # Если что-то апдейтили - шлем сообщение
@@ -98,12 +104,23 @@ def send_msg():
 
         work_timeout = config.getint('renewer_settings', 'work_timeout')
         time.sleep(work_timeout)
-    MySQLReq.connection.close()
+    MySQLReq.__del__
 
 
-if __name__ == "__main__":
-    server_thread = threading.Thread(target=web_socket_msg)
+def main():
+    """
+    Основная функция
+    """
+    ws_port = config.getint('renewer_settings', 'ws_port')
+    ws_ip = config.get('renewer_settings', 'ws_ip')
+    server = WebsocketServer(ws_port, host=ws_ip)
+
+    server_thread = threading.Thread(target=web_socket_msg, args=(server,))
     server_thread.start()
 
     msg_thread = threading.Thread(target=send_msg)
     msg_thread.start()
+
+
+if __name__ == "__main__":
+    main()

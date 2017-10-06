@@ -3,13 +3,30 @@ import logging
 from configparser import ConfigParser
 
 
-logging.basicConfig(filename='/var/log/StackMysql_error.log',
-                    format = '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
-                    level = logging.ERROR)
-logger = logging.getLogger()
-
 config = ConfigParser()
-config.read('StackSettings.ini')
+config.read('/etc/stackoversearch/stack_settings.ini')
+
+logfile = config.get('logs', 'path')
+loglevel = config.get('logs', 'level').upper()
+
+
+# Выставляем уровень для logger
+def get_log_level(loglevel):
+    level = logging.DEBUG if loglevel == "INFO" else None
+    level = logging.INFO if loglevel == "INFO" else None
+    level = logging.ERROR if loglevel == "ERROR" else None
+    level = logging.DISASTER if loglevel == "DISASTER" else None
+    if level is None:
+        level = logging.ERROR
+    return level
+
+
+level = get_log_level(loglevel)
+
+logging.basicConfig(filename=logfile+'/mysql_error.log',
+                    format='[%(asctime)s] - %(lineno)d - %(message)s',
+                    level=level)
+logger = logging.getLogger()
 
 
 class SQLRequest():
@@ -22,7 +39,9 @@ class SQLRequest():
                                           cursorclass=pymysql.cursors.DictCursor)
 
     def get_req_list(self, **kwargs):
-        """ Метод для получения списка всех сделанных запросов """
+        """
+        Метод для получения списка всех сделанных запросов
+        """
         try:
             with self.connection.cursor() as self.cur:
                 select = """SELECT `request`, `reqtime` FROM requests"""
@@ -39,8 +58,10 @@ class SQLRequest():
             return results
 
     def get_last_req_activity(self, name):
-        """ Метод для получения времени последней активности
-            в unixtime по имени запроса """
+        """
+        Метод для получения времени последней активности
+        в unixtime по имени запроса
+        """
         try:
             with self.connection.cursor() as self.cur:
                 self.cur.execute("""SELECT UNIX_TIMESTAMP(last_activity)
@@ -56,12 +77,15 @@ class SQLRequest():
             return last_activity
 
     def record_intitle_to_mysql(self, intitle):
-        """ Метод для записи запроса в mysql """
+        """
+        Метод для записи запроса в mysql
+        """
         try:
             with self.connection.cursor() as self.cur:
                 self.cur.execute("""INSERT INTO requests (request, reqtime)
                                     VALUES(%s, NOW())
-                                    ON DUPLICATE KEY UPDATE reqtime=NOW()""", (intitle))
+                                    ON DUPLICATE KEY UPDATE reqtime=NOW()""",
+                                    (intitle))
                 self.connection.commit()
         except Exception as err:
             logger.error(err)
@@ -69,7 +93,9 @@ class SQLRequest():
             self.cur.close()
 
     def record_response(self, intitle, response):
-        """ Метод для записи полученных от API значений в mysql """
+        """
+        Метод для записи полученных от API значений в mysql
+        """
         for i in range(0, len(response) - 1):
             try:
                 with self.connection.cursor() as self.cur:
@@ -91,8 +117,10 @@ class SQLRequest():
                 self.cur.close()
 
     def results_for_print(self, params_dict):
-        """ Метод забирает результаты для генерации
-            страницы с ответами на запрос из базы """
+        """
+        Метод забирает результаты для генерации
+        страницы с ответами на запрос из базы
+        """
 
         intitle = params_dict['intitle']
         pagesize = params_dict['pagesize']
@@ -112,3 +140,9 @@ class SQLRequest():
         finally:
             self.cur.close()
             return results
+
+    def __del__(self):
+        try:
+            self.connection.close()
+        except Exception as err:
+            logger.error(err)

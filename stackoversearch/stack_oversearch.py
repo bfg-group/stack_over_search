@@ -1,4 +1,4 @@
-from StackMysql import SQLRequest
+from .stack_mysql import SQLRequest, get_log_level
 from aiohttp import web
 import aiohttp_jinja2
 import jinja2
@@ -7,13 +7,19 @@ import requests
 import logging
 from configparser import ConfigParser
 
-logging.basicConfig(filename='/var/log/stack_over_search.log',
-                    format = '%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
-                    level = logging.INFO)
+config = ConfigParser()
+config.read('/etc/stackoversearch/stack_settings.ini')
+
+logfile = config.get('logs', 'path')
+loglevel = config.get('logs', 'level').upper()
+
+level = get_log_level(loglevel)
+
+logging.basicConfig(filename=logfile+'/stack_over_search.log',
+                    format='[%(asctime)s] - %(lineno)d - %(message)s',
+                    level=level)
 logger = logging.getLogger()
 
-config = ConfigParser()
-config.read('StackSettings.ini')
 
 try:
     r = redis.StrictRedis(host=config.get('redis', 'ip'),
@@ -35,10 +41,12 @@ class StackApiReq():
         self.has_more = True
 
     def make_req(self):
-        """Метод для получения данных от
-           API согласно параметрам созданого объекта"""
+        """
+        Метод для получения данных от
+        API согласно параметрам созданого объекта
+        """
 
-        api_link = "http://api.stackexchange.com/2.2/search?"
+        api_link = "http://api.stackexchange.com/2.2/search"
         data = {'page': str(self.page),
                 'pagesize': self.pagesize,
                 'order': self.order,
@@ -46,10 +54,7 @@ class StackApiReq():
                 'intitle': self.intitle,
                 'site': 'stackoverflow'}
 
-        for key in data:
-            api_link += '{}={}&'.format(key, data[key])
-
-        httpreq = requests.get(api_link[:-1])
+        httpreq = requests.get(api_link, params=data)
         response = httpreq.json()
         try:
             self.has_more = response['has_more']
@@ -59,8 +64,11 @@ class StackApiReq():
 
 
 def main(request):
-    """Функция для рендеринга основной страницы поиска.
-       На ней получаем от юзера данные - запрос/кол-во ответов на страницe."""
+    """
+    Функция для рендеринга основной страницы поиска.
+    На ней получаем от юзера данные - запрос/кол-во ответов на страницe
+    """
+    MySQLReq = SQLRequest()
 
     context = {}
 
@@ -71,12 +79,16 @@ def main(request):
         page_number = data['page_number']
     except KeyError:
         # Если данных о формах нет - рендерим чистую страницу
-        return aiohttp_jinja2.render_template('search.html', request, context)
+        return aiohttp_jinja2.render_template('search.html',
+                                              request,
+                                              context)
 
     # Если данных формы не хватает - рендерим ошибку
     if intitle == '' or page_number == '':
         context['error'] = "Не переданы обязательные параметры"
-        return aiohttp_jinja2.render_template('search.html', request, context)
+        return aiohttp_jinja2.render_template('search.html',
+                                              request,
+                                              context)
 
     # Если всё ок - выполняем запрос
     else:
@@ -104,11 +116,14 @@ def main(request):
 
         else:
             logger.debug('req_new')
+            api_data = UserReq.make_req()
             try:
-                api_data = UserReq.make_req()['items']
+                api_data = api_data['items']
             except KeyError:
-                context['error'] = 'Ошибка API: ' + UserReq.make_req()['error_message']
-                return aiohttp_jinja2.render_template('search.html', request, context)
+                context['error'] = 'Ошибка API: ' + api_data['error_message']
+                return aiohttp_jinja2.render_template('search.html',
+                                                      request,
+                                                      context)
 
             MySQLReq.record_response(UserReq.intitle, api_data)
             results = MySQLReq.results_for_print(UserReq.__dict__)
@@ -136,15 +151,22 @@ def main(request):
         for row in response:
             r.delete(row)
 
-        print (context)
         MySQLReq.record_intitle_to_mysql(UserReq.intitle)
-        return aiohttp_jinja2.render_template('show.html', request, context)
+        MySQLReq.__del__
+
+        return aiohttp_jinja2.render_template('show.html',
+                                              request,
+                                              context)
 
 
 def show_all(request):
-    """ Функция рендеринга списка всех запросов.
-        Ходим в базу, смотрим существующие запросы.
-        При необходимости сортируем."""
+    """
+    Функция рендеринга списка всех запросов.
+    Ходим в базу, смотрим существующие запросы.
+    При необходимости сортируем
+    """
+    MySQLReq = SQLRequest()
+
     # Обнуляем словарь с данными для передачи веб странице
     context = {}
 
@@ -174,12 +196,17 @@ def show_all(request):
             send_show_all_to_cache(results)
 
     context['req_records'] = results
-    return aiohttp_jinja2.render_template('show_all.html', request, context)
+    MySQLReq.__del__
+    return aiohttp_jinja2.render_template('show_all.html',
+                                          request,
+                                          context)
 
 
 def send_show_all_to_cache(results, **kwargs):
-    """Вспомогательная функция для станицы show_all.
-       Складывает запрос к базе в кэш"""
+    """
+    Вспомогательная функция для станицы show_all.
+    Складывает запрос к базе в кэш
+    """
     sort_or_not = kwargs.pop('sort', '')
     i = 0
     for row in results:
@@ -192,8 +219,10 @@ def send_show_all_to_cache(results, **kwargs):
 
 
 def load_show_all_from_cache(order):
-    """Вспомогательная функция для станицы show_all.
-       Если запрос есть в кэше, достаёт его оттуда."""
+    """
+    Вспомогательная функция для станицы show_all
+    Если запрос есть в кэше, достаёт его оттуда
+    """
     results = []
     response = r.keys('showall:{}results:*'.format(order))
     for i in range(0, len(response)-1):
@@ -203,14 +232,16 @@ def load_show_all_from_cache(order):
 
 # Объявляем всё необходимое для работы aiohttp
 app = web.Application()
-aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader('templates'))
-app.router.add_static('/static/', path=str('static'), name='static')
+aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader('stackoversearch/templates'))
+app.router.add_static('/static', path=str('stackoversearch/static'), name='static')
 
 app.router.add_route('*', '/', main)
 app.router.add_route('GET', '/show_all', show_all)
 
 
-if __name__ == "__main__":
-    MySQLReq = SQLRequest()
+def web_server():
     web.run_app(app, host='127.0.0.1', port=8080)
-    MySQLReq.connection.close()
+
+
+if __name__ == "__main__":
+    web_server()
