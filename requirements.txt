@@ -1,6 +1,5 @@
 aiohttp==2.3.8
 aiohttp-jinja2==0.14.0
-async-timeout==1.4.0
 configparser==3.5.0
 PyMySQL==0.7.11
 redis==2.10.6
