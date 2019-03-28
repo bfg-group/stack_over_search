@@ -7,29 +7,32 @@ __all__ = [
 _API_URL = 'http://api.stackexchange.com/2.2/search'
 
 
-def _get_params(name, page, pagesize):
+def _get_params(name, page, pagesize, sort='desc'):
     return {
         'page': page,
         'pagesize': pagesize,
-        'order': 'desc',
+        'order': sort,
         'sort': 'creation',
         'intitle': name,
         'site': 'stackoverflow',
     }
 
 
-class StackClient:
+class StackClient(object):
     """
     Client for StackExchange api requests.
     """
     def __init__(self):
         self._session = ClientSession()
 
+    async def close(self):
+        await self._session.close()
+
     async def __aenter__(self):
         return self
     
     async def __aexit__(self, *_):
-        await self._session.close()
+        await self.close()
 
     async def request(self, name, page, pagesize):
         async with self._session.get(
